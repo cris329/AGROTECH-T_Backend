@@ -1,6 +1,6 @@
 # Entorno local con MariaDB 11.8.8 y Django.
 services:
-  database:
+  mariadb:
     image: mariadb:11.8.8
     environment:
       MARIADB_DATABASE: ${DB_NAME:-agrotech_t}
@@ -16,7 +16,7 @@ services:
       retries: 15
     restart: unless-stopped
 
-  cache:
+  redis:
     image: redis:8-alpine
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
@@ -28,21 +28,21 @@ services:
       retries: 10
     restart: unless-stopped
 
-  api:
+  backend:
     build:
       context: .
       target: production
     env_file: .env
     environment:
-      DB_HOST: database
+      DB_HOST: mariadb
       DB_PORT: 3306
-      REDIS_URL: redis://cache:6379/0
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "${PORT:-8080}:8080"
     depends_on:
-      database:
+      mariadb:
         condition: service_healthy
-      cache:
+      redis:
         condition: service_healthy
     restart: unless-stopped
 
