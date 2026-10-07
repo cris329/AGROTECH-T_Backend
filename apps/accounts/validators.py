@@ -3,7 +3,6 @@ import re
 
 from rest_framework import serializers
 
-NAME_PATTERN = re.compile(r"^[^\W\d_][^\W\d_ ]*(?: [^\W\d_][^\W\d_ ]*)*$", re.UNICODE)
 ID_PATTERN = re.compile(r"^\d{5,15}$")
 PHONE_PATTERN = re.compile(r"^\d{7,15}$")
 WEAK_CREDENTIAL_ERROR = (
@@ -20,7 +19,8 @@ def only_digits(value: str) -> str:
 def normalize_name(value: str, label: str) -> str:
     """Normaliza espacios y valida un nombre humano."""
     normalized = " ".join(value.split())
-    if not 2 <= len(normalized) <= 40 or not NAME_PATTERN.fullmatch(normalized):
+    only_letters = all(part.isalpha() for part in normalized.split())
+    if not 2 <= len(normalized) <= 40 or not only_letters:
         raise serializers.ValidationError(f"el {label} debe tener solo letras")
     return normalized
 
