@@ -6,6 +6,7 @@ Backend independiente de AGROTECH-T construido con:
 - Django 5.2 LTS
 - Django REST Framework
 - MariaDB 11.8.8
+- Redis 8
 
 No contiene frontend.
 
@@ -14,6 +15,8 @@ No contiene frontend.
 - Registro con identificación única.
 - Contraseñas con Argon2.
 - Inicio de sesión con JWT cifrado mediante JWE A256GCM.
+- Sesiones revocables sin almacenar tokens completos.
+- Rate limiting y bloqueo temporal de intentos.
 - Recuperación por correo con Brevo/SMTP o por WhatsApp con Twilio Verify.
 - OTP de correo almacenado como HMAC, con caducidad y máximo cinco intentos.
 - Sesión única, vencimiento por inactividad y rotación de token.
@@ -49,6 +52,8 @@ La especificación completa está en `docs/API.md`.
 
 - `POST /api/v1/accounts/`
 - `POST /api/v1/auth/login/`
+- `POST /api/v1/auth/logout/`
+- `GET /api/v1/auth/me/`
 - `POST /api/v1/auth/password/recovery/`
 - `POST /api/v1/auth/password/reset/`
 - `POST /api/v1/auth/session/renew/`
