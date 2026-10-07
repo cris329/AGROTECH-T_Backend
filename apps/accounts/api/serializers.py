@@ -79,6 +79,17 @@ class TokenResponseSerializer(serializers.Serializer):
     token = serializers.CharField()
 
 
+class AccountResponseSerializer(serializers.Serializer):
+    """Documenta los datos visibles de la cuenta autenticada."""
+
+    id = serializers.IntegerField()
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+    identification = serializers.CharField()
+    phone = serializers.CharField()
+    correo = serializers.EmailField()
+
+
 class SuccessResponseSerializer(serializers.Serializer):
     """Documenta una operación exitosa."""
 

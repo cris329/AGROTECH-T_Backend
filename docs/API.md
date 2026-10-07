@@ -39,8 +39,24 @@ tienen la forma `{"error": "mensaje"}`.
 
 - `200`: `{"token": "<JWT cifrado>"}`
 - `401`: credenciales inválidas
+- `429`: demasiados intentos
 
 La respuesta incluye `Cache-Control: no-store`.
+El token es un JWE A256GCM y no contiene datos personales, únicamente el id
+interno y metadatos de seguridad cifrados.
+
+## Consultar cuenta autenticada
+
+`GET /auth/me/`
+
+Requiere `Authorization: Bearer <token>`. Retorna los datos visibles de la
+cuenta. Un token rotado, revocado o vencido responde `401`.
+
+## Cerrar sesión
+
+`POST /auth/logout/`
+
+Revoca inmediatamente la sesión actual y responde `{"ok": true}`.
 
 ## Solicitar recuperación
 
@@ -93,6 +109,9 @@ Authorization: Bearer <token>
 - `401`: token o sesión vencida
 
 Cada renovación invalida el token anterior.
+
+Los endpoints sensibles tienen límites por IP y por identificación respaldados
+por Redis. Cinco contraseñas incorrectas bloquean temporalmente la cuenta.
 
 ## Documentación interactiva
 

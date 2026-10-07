@@ -4,7 +4,7 @@ import os
 
 import requests
 
-from apps.accounts.exceptions import AppError
+from apps.accounts.errors import AppError
 
 
 def send_code(phone: str) -> None:

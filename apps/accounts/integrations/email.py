@@ -6,7 +6,7 @@ import requests
 from django.conf import settings
 from django.core.mail import send_mail
 
-from apps.accounts.exceptions import AppError
+from apps.accounts.errors import AppError
 
 
 def send_code(address: str, digits: str) -> None:

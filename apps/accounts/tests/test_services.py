@@ -6,7 +6,7 @@ import pytest
 from django.test import override_settings
 from django.utils import timezone
 
-from apps.accounts.exceptions import AppError
+from apps.accounts.errors import AppError
 from apps.accounts.integrations import email, whatsapp
 from apps.accounts.models import LoginCode
 from apps.accounts.services import otp_service, token_service
@@ -15,7 +15,10 @@ from apps.accounts.services import otp_service, token_service
 def test_token_round_trip_and_invalid_token():
     """El JWE conserva el id y rechaza contenido manipulado."""
     token = token_service.issue(42)
-    assert token_service.read(token) == 42
+    claims = token_service.read(token)
+    assert claims.user_id == 42
+    assert claims.token_id
+    assert token_service.digest(token) not in token
     with pytest.raises(AppError):
         token_service.read(f"{token}x")
 

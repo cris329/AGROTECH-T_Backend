@@ -1,14 +1,20 @@
 """Configuración central de Django, DRF y MariaDB."""
 import os
+import secrets
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "unsafe-development-only")
 DEBUG = os.getenv("DJANGO_DEBUG", "false").lower() == "true"
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "")
+if not SECRET_KEY:
+    if not DEBUG:
+        raise ImproperlyConfigured("DJANGO_SECRET_KEY es obligatoria en producción")
+    SECRET_KEY = secrets.token_urlsafe(50)
 HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1")
 ALLOWED_HOSTS = [host.strip() for host in HOSTS.split(",") if host.strip()]
 
@@ -63,10 +69,42 @@ CORS_ALLOWED_ORIGINS = [
     for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
     if origin.strip()
 ]
+REDIS_URL = os.getenv("REDIS_URL", "")
+if not REDIS_URL and not DEBUG:
+    raise ImproperlyConfigured("REDIS_URL es obligatoria en producción")
+CACHES = {
+    "default": (
+        {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": REDIS_URL,
+            "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
+        }
+        if REDIS_URL
+        else {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "agrotech-development",
+        }
+    )
+}
+FIVE_REQUESTS_PER_HOUR = "5/hour"
 REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "apps.accounts.exceptions.api_exception_handler",
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "apps.accounts.api.authentication.JWEAuthentication"
+    ],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_THROTTLE_RATES": {
+        "register": FIVE_REQUESTS_PER_HOUR,
+        "login": "10/minute",
+        "login_account": "5/minute",
+        "recovery": FIVE_REQUESTS_PER_HOUR,
+        "recovery_account": "3/hour",
+        "reset": "10/hour",
+        "reset_account": FIVE_REQUESTS_PER_HOUR,
+        "renew": "30/minute",
+    },
     "UNAUTHENTICATED_USER": None,
 }
 SPECTACULAR_SETTINGS = {

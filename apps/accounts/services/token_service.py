@@ -1,12 +1,27 @@
 """Emite y abre JWT cifrados con JWE A256GCM."""
 import base64
+import hashlib
 import json
 import os
+import secrets
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from jwcrypto import jwe, jwk
 
-from apps.accounts.exceptions import AppError
+from apps.accounts.errors import AppError
+
+ISSUER = "agrotech-t"
+AUDIENCE = "agrotech-t-api"
+
+
+@dataclass(frozen=True)
+class TokenClaims:
+    """Representa los datos mínimos contenidos en una sesión cifrada."""
+
+    user_id: int
+    token_id: str
+    expires_at: int
 
 
 def _key() -> jwk.JWK:
@@ -32,12 +47,15 @@ def ttl() -> timedelta:
 
 
 def issue(user_id: int) -> str:
-    """Crea un JWT cifrado que contiene únicamente id y tiempos."""
+    """Crea un JWE que contiene únicamente identidad interna y metadatos."""
     now = datetime.now(UTC)
     claims = {
         "sub": str(user_id),
         "iat": int(now.timestamp()),
         "exp": int((now + ttl()).timestamp()),
+        "iss": ISSUER,
+        "aud": AUDIENCE,
+        "jti": secrets.token_urlsafe(24),
     }
     token = jwe.JWE(
         json.dumps(claims).encode(),
@@ -47,14 +65,32 @@ def issue(user_id: int) -> str:
     return token.serialize(compact=True)
 
 
-def read(compact: str) -> int:
-    """Descifra un token vigente y retorna el id del usuario."""
+def read(compact: str) -> TokenClaims:
+    """Descifra y valida una sesión JWE vigente."""
     try:
         token = jwe.JWE()
         token.deserialize(compact, key=_key())
         claims = json.loads(token.payload)
-        if datetime.now(UTC).timestamp() >= int(claims["exp"]):
+        now = int(datetime.now(UTC).timestamp())
+        issued_at = int(claims["iat"])
+        expires_at = int(claims["exp"])
+        if (
+            now >= expires_at
+            or issued_at > now + 60
+            or claims["iss"] != ISSUER
+            or claims["aud"] != AUDIENCE
+            or not claims["jti"]
+        ):
             raise ValueError("expired")
-        return int(claims["sub"])
+        return TokenClaims(
+            user_id=int(claims["sub"]),
+            token_id=str(claims["jti"]),
+            expires_at=expires_at,
+        )
     except (KeyError, TypeError, ValueError, jwe.InvalidJWEData) as exc:
         raise AppError("la sesion vencio", 401) from exc
+
+
+def digest(compact: str) -> str:
+    """Genera una huella irreversible del token para persistencia."""
+    return hashlib.sha256(compact.encode()).hexdigest()

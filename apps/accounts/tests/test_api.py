@@ -4,6 +4,15 @@ from django.contrib.auth.hashers import check_password
 from rest_framework.test import APIClient
 
 from apps.accounts.models import Session, User
+from apps.accounts.services import token_service
+from apps.accounts.tests.constants import (
+    CREDENTIAL_FIELD,
+    NEW_CREDENTIAL,
+    REGISTER_CREDENTIAL,
+    VALID_CREDENTIAL,
+    WEAK_CREDENTIAL,
+    WRONG_CREDENTIAL,
+)
 
 REGISTER = {
     "first_name": "Luisa",
@@ -11,7 +20,7 @@ REGISTER = {
     "identification": "98765432",
     "phone": "3012223344",
     "correo": "luisa@example.com",
-    "password": "Strong1!",
+    CREDENTIAL_FIELD: REGISTER_CREDENTIAL,
 }
 
 
@@ -27,7 +36,7 @@ def test_register_creates_hashed_account(client):
     response = client.post("/api/v1/accounts/", REGISTER, format="json")
     account = User.objects.get(identification="98765432")
     assert response.status_code == 201
-    assert check_password("Strong1!", account.password_hash)
+    assert check_password(REGISTER_CREDENTIAL, account.password_hash)
 
 
 @pytest.mark.django_db
@@ -37,7 +46,7 @@ def test_register_rejects_duplicate_and_weak_password(client):
     duplicate = client.post("/api/v1/registro", REGISTER, format="json")
     weak = client.post(
         "/api/v1/accounts/",
-        {**REGISTER, "identification": "12345", "password": "weak"},
+        {**REGISTER, "identification": "12345", CREDENTIAL_FIELD: WEAK_CREDENTIAL},
         format="json",
     )
     assert duplicate.status_code == 409
@@ -45,11 +54,11 @@ def test_register_rejects_duplicate_and_weak_password(client):
 
 
 @pytest.mark.django_db
-def test_login_and_renew_rotate_token(client, user):
-    """El acceso abre una sesión y la renovación rota el token."""
+def test_login_renew_me_and_logout(client, user):
+    """La sesión permite consultar, rotar y revocar el acceso."""
     login = client.post(
         "/api/v1/auth/login/",
-        {"identification": user.identification, "password": "Secure1!"},
+        {"identification": user.identification, CREDENTIAL_FIELD: VALID_CREDENTIAL},
         format="json",
     )
     token = login.data["token"]
@@ -60,7 +69,17 @@ def test_login_and_renew_rotate_token(client, user):
     assert login.status_code == 200
     assert renewed.status_code == 200
     assert renewed.data["token"] != token
-    assert Session.objects.get(user=user).token == renewed.data["token"]
+    session = Session.objects.get(user=user)
+    assert session.token_hash == token_service.digest(renewed.data["token"])
+    assert client.get("/api/v1/auth/me/", HTTP_AUTHORIZATION=f"Bearer {token}").status_code == 401
+    current = f"Bearer {renewed.data['token']}"
+    profile = client.get("/api/v1/auth/me/", HTTP_AUTHORIZATION=current)
+    logout = client.post("/api/v1/auth/logout/", HTTP_AUTHORIZATION=current)
+    rejected = client.get("/api/v1/auth/me/", HTTP_AUTHORIZATION=current)
+    assert profile.status_code == 200
+    assert profile.data["identification"] == user.identification
+    assert logout.status_code == 200
+    assert rejected.status_code == 401
 
 
 @pytest.mark.django_db
@@ -68,11 +87,27 @@ def test_login_rejects_invalid_credentials(client, user):
     """El acceso responde un error genérico para credenciales inválidas."""
     response = client.post(
         "/api/v1/auth/login/",
-        {"identification": user.identification, "password": "Wrong123!"},
+        {"identification": user.identification, CREDENTIAL_FIELD: WRONG_CREDENTIAL},
         format="json",
     )
     assert response.status_code == 401
     assert response.data == {"error": "credenciales invalidas"}
+
+
+@pytest.mark.django_db
+def test_login_temporarily_blocks_repeated_failures(client, user):
+    """Cinco contraseñas incorrectas bloquean temporalmente la cuenta."""
+    payload = {"identification": user.identification, CREDENTIAL_FIELD: WRONG_CREDENTIAL}
+    for _ in range(5):
+        assert client.post("/api/v1/auth/login/", payload, format="json").status_code == 401
+    blocked = client.post(
+        "/api/v1/auth/login/",
+        {"identification": user.identification, CREDENTIAL_FIELD: VALID_CREDENTIAL},
+        format="json",
+    )
+    user.refresh_from_db()
+    assert blocked.status_code in {401, 429}
+    assert user.locked_until is not None
 
 
 @pytest.mark.django_db
@@ -85,14 +120,18 @@ def test_email_recovery_resets_password(client, user, monkeypatch):
     repeated = client.post("/api/v1/auth/password/recovery/", request, format="json")
     reset = client.post(
         "/api/v1/auth/password/reset/",
-        {"identification": user.identification, "code": "123456", "password": "NewPass2!"},
+        {
+            "identification": user.identification,
+            "code": "123456",
+            CREDENTIAL_FIELD: NEW_CREDENTIAL,
+        },
         format="json",
     )
     user.refresh_from_db()
     assert sent.status_code == 200
     assert repeated.status_code == 429
     assert reset.status_code == 200
-    assert check_password("NewPass2!", user.password_hash)
+    assert check_password(NEW_CREDENTIAL, user.password_hash)
 
 
 @pytest.mark.django_db

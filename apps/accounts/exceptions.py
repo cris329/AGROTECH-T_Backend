@@ -3,16 +3,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import exception_handler
 
-
-class AppError(Exception):
-    """Error esperado y seguro para mostrar al cliente."""
-
-    def __init__(self, message: str, status_code: int = status.HTTP_400_BAD_REQUEST, **extra):
-        """Inicializa el error con estado y campos adicionales."""
-        super().__init__(message)
-        self.message = message
-        self.status_code = status_code
-        self.extra = extra
+from apps.accounts.errors import AppError
 
 
 def api_exception_handler(exc: Exception, context: dict) -> Response | None:
@@ -20,7 +11,7 @@ def api_exception_handler(exc: Exception, context: dict) -> Response | None:
     if isinstance(exc, AppError):
         return Response({"error": exc.message, **exc.extra}, status=exc.status_code)
     response = exception_handler(exc, context)
-    if response is not None and response.status_code == status.HTTP_400_BAD_REQUEST:
+    if response is not None and response.status_code >= status.HTTP_400_BAD_REQUEST:
         response.data = {"error": _first_message(response.data)}
     return response
 

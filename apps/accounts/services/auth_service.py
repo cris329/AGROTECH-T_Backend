@@ -1,11 +1,10 @@
 """Ejecuta los casos de uso de registro, acceso y recuperación."""
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import IntegrityError
-from django.utils import timezone
 
-from apps.accounts.exceptions import AppError
-from apps.accounts.models import Session, User
-from apps.accounts.services import otp_service, token_service
+from apps.accounts.errors import AppError
+from apps.accounts.models import User
+from apps.accounts.services import login_security, otp_service, session_service, token_service
 
 
 def register(data: dict) -> None:
@@ -20,13 +19,14 @@ def register(data: dict) -> None:
 def login(identification: str, password: str) -> str:
     """Valida credenciales y abre una sesión única."""
     user = User.objects.filter(identification=identification).first()
-    if not user or not check_password(password, user.password_hash):
+    if not user or login_security.is_blocked(user):
         raise AppError("credenciales invalidas", 401)
+    if not check_password(password, user.password_hash):
+        login_security.register_failure(user)
+        raise AppError("credenciales invalidas", 401)
+    login_security.clear_failures(user)
     token = token_service.issue(user.pk)
-    Session.objects.update_or_create(
-        user=user,
-        defaults={"last_seen": timezone.now(), "token": token},
-    )
+    session_service.open_session(user, token)
     return token
 
 
@@ -49,26 +49,18 @@ def reset_password(identification: str, code: str, password: str) -> None:
     otp_service.verify_code(user, code)
     user.password_hash = make_password(password)
     user.save(update_fields=["password_hash"])
-    Session.objects.filter(user=user).delete()
+    login_security.clear_failures(user)
+    session_service.revoke(user)
 
 
 def renew(authorization: str) -> str:
     """Rota el token de una sesión que permanece activa."""
-    current = _bearer(authorization)
-    user_id = token_service.read(current)
-    threshold = timezone.now() - token_service.ttl()
-    session = Session.objects.filter(
-        user_id=user_id,
-        token=current,
-        last_seen__gt=threshold,
-    ).first()
-    if not session:
-        raise AppError("la sesion vencio", 401)
-    next_token = token_service.issue(user_id)
-    session.token = next_token
-    session.last_seen = timezone.now()
-    session.save(update_fields=["token", "last_seen"])
-    return next_token
+    return session_service.rotate(_bearer(authorization))
+
+
+def logout(user: User) -> None:
+    """Revoca la sesión activa de una cuenta."""
+    session_service.revoke(user)
 
 
 def _bearer(header: str) -> str:

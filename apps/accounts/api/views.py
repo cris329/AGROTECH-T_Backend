@@ -4,9 +4,11 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.accounts.api.serializers import (
+    AccountResponseSerializer,
     LoginSerializer,
     RecoverSerializer,
     RecoveryResponseSerializer,
@@ -15,6 +17,11 @@ from apps.accounts.api.serializers import (
     SuccessResponseSerializer,
     TokenResponseSerializer,
 )
+from apps.accounts.api.throttles import (
+    LoginIdentifierThrottle,
+    RecoveryIdentifierThrottle,
+    ResetIdentifierThrottle,
+)
 from apps.accounts.services import auth_service
 
 
@@ -22,6 +29,9 @@ class RegisterView(APIView):
     """Crea cuentas nuevas."""
 
     authentication_classes = []
+    permission_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "register"
 
     @extend_schema(request=RegisterSerializer, responses={201: SuccessResponseSerializer})
     def post(self, request: Request) -> Response:
@@ -36,6 +46,9 @@ class LoginView(APIView):
     """Autentica cuentas."""
 
     authentication_classes = []
+    permission_classes = []
+    throttle_classes = [ScopedRateThrottle, LoginIdentifierThrottle]
+    throttle_scope = "login"
 
     @extend_schema(request=LoginSerializer, responses={200: TokenResponseSerializer})
     def post(self, request: Request) -> Response:
@@ -49,6 +62,9 @@ class RecoverView(APIView):
     """Inicia la recuperación de contraseña."""
 
     authentication_classes = []
+    permission_classes = []
+    throttle_classes = [ScopedRateThrottle, RecoveryIdentifierThrottle]
+    throttle_scope = "recovery"
 
     @extend_schema(request=RecoverSerializer, responses={200: RecoveryResponseSerializer})
     def post(self, request: Request) -> Response:
@@ -65,6 +81,9 @@ class ResetView(APIView):
     """Finaliza la recuperación de contraseña."""
 
     authentication_classes = []
+    permission_classes = []
+    throttle_classes = [ScopedRateThrottle, ResetIdentifierThrottle]
+    throttle_scope = "reset"
 
     @extend_schema(request=ResetSerializer, responses={200: SuccessResponseSerializer})
     def post(self, request: Request) -> Response:
@@ -79,12 +98,44 @@ class RenewView(APIView):
     """Renueva una sesión activa."""
 
     authentication_classes = []
+    permission_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "renew"
 
     @extend_schema(request=None, responses={200: TokenResponseSerializer})
     def post(self, request: Request) -> Response:
         """Rota el token Bearer presentado."""
         token = auth_service.renew(request.headers.get("Authorization", ""))
         return _token_response(token)
+
+
+class MeView(APIView):
+    """Expone la cuenta autenticada sin incluir secretos."""
+
+    @extend_schema(responses={200: AccountResponseSerializer})
+    def get(self, request: Request) -> Response:
+        """Retorna los datos visibles del usuario actual."""
+        user = request.user
+        return Response(
+            {
+                "id": user.pk,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "identification": user.identification,
+                "phone": user.phone,
+                "correo": user.correo,
+            }
+        )
+
+
+class LogoutView(APIView):
+    """Cierra la sesión autenticada."""
+
+    @extend_schema(request=None, responses={200: SuccessResponseSerializer})
+    def post(self, request: Request) -> Response:
+        """Revoca inmediatamente el token vigente."""
+        auth_service.logout(request.user)
+        return Response({"ok": True})
 
 
 def _token_response(token: str) -> Response:

@@ -9,7 +9,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
 
-from apps.accounts.exceptions import AppError
+from apps.accounts.errors import AppError
 from apps.accounts.integrations import email, whatsapp
 from apps.accounts.models import LoginCode, User
 
